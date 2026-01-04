@@ -9,9 +9,9 @@ const eventStack = new EventStack(app, 'NexusMarine-EventStack', {});
 new ApiStack(app, 'NexusMarine-ApiStack', {
     telemetryTable: dbStack.telemetryTable,
     eventBus: eventStack.nexusBus,
-    // Inject VPC and DB details
     vpc: dbStack.vpc,
     postgresInstance: dbStack.postgresInstance,
-    dbSecurityGroup: dbStack.dbSecurityGroup
+    dbSecurityGroup: dbStack.dbSecurityGroup,
+    salesforceQueue: eventStack.salesforceQueue // <--- Pass the Queue
 });
 //# sourceMappingURL=nexus-marine.js.map

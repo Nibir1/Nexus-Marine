@@ -4,7 +4,8 @@
  * Resources:
  * 1. Telemetry Lambda (Serverless, Public Internet access).
  * 2. Orders Lambda (VPC-enabled, access to RDS Postgres).
- * 3. RestApi: Public API Gateway.
+ * 3. Salesforce Lambda (SQS Triggered Worker).
+ * 4. RestApi: Public API Gateway.
  */
 
 import * as cdk from 'aws-cdk-lib';
@@ -15,6 +16,8 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as rds from 'aws-cdk-lib/aws-rds';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources'; // <--- NEW IMPORT
+import * as sqs from 'aws-cdk-lib/aws-sqs'; // <--- NEW IMPORT
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { fileURLToPath } from 'url';
@@ -26,9 +29,10 @@ const __dirname = path.dirname(__filename);
 interface ApiStackProps extends cdk.StackProps {
     telemetryTable: dynamodb.Table; // Dependency injection from DatabaseStack
     eventBus: events.EventBus;      // Dependency injection from EventStack
-    vpc: ec2.Vpc;                   // <--- NEW: Required for Orders Lambda networking
+    vpc: ec2.Vpc;                   // Required for Orders Lambda networking
     postgresInstance: rds.DatabaseInstance; // Dependency injection from DatabaseStack
     dbSecurityGroup: ec2.SecurityGroup;     // Dependency injection from DatabaseStack
+    salesforceQueue: sqs.Queue;     // <--- NEW PROP: Dependency injection from EventStack
 }
 
 export class ApiStack extends cdk.Stack {
@@ -88,12 +92,41 @@ export class ApiStack extends cdk.Stack {
         props.eventBus.grantPutEventsTo(ordersLambda);
         
         // Permissions: Read DB Credentials from Secrets Manager
-        // Note: The RDS construct automatically creates a secret for the generated password.
         props.postgresInstance.secret?.grantRead(ordersLambda);
 
 
         // =================================================================
-        // 3. API GATEWAY
+        // 3. LAMBDA: Salesforce Sync (Worker / SQS Trigger)
+        // =================================================================
+        /**
+         * This function is triggered by SQS events.
+         * It simulates an external API call to Salesforce.
+         * Since it only makes HTTP calls (simulated), it can stay on the public internet (outside VPC)
+         * to save costs and complexity (no NAT Gateway needed for this specific function).
+         */
+        const salesforceLambda = new nodejs.NodejsFunction(this, 'SalesforceHandler', {
+            runtime: lambda.Runtime.NODEJS_20_X,
+            entry: path.join(__dirname, '../../backend/src/salesforce/handler.ts'),
+            handler: 'handler',
+            environment: {
+                // No specific env vars needed for this simulation
+            },
+            bundling: {
+                minify: true,
+                sourceMap: true,
+            }
+        });
+
+        // Add SQS Trigger
+        // The Lambda will automatically poll the queue and invoke the handler with a batch of records.
+        salesforceLambda.addEventSource(new lambdaEventSources.SqsEventSource(props.salesforceQueue, {
+            batchSize: 10, // Process up to 10 orders at once
+            reportBatchItemFailures: true // Good practice for partial failures in a batch
+        }));
+
+
+        // =================================================================
+        // 4. API GATEWAY
         // =================================================================
 
         const api = new apigateway.RestApi(this, 'NexusMarineApi', {
@@ -112,7 +145,7 @@ export class ApiStack extends cdk.Stack {
         const telemetryResource = api.root.addResource('telemetry');
         telemetryResource.addMethod('POST', new apigateway.LambdaIntegration(telemetryLambda));
 
-        // --- Route: /orders (NEW) ---
+        // --- Route: /orders ---
         const ordersResource = api.root.addResource('orders');
         ordersResource.addMethod('POST', new apigateway.LambdaIntegration(ordersLambda));
         
