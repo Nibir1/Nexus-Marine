@@ -1,0 +1,12 @@
+/* frontend/src/index.css */
+@import "tailwindcss";
+
+/* Apply base styles to the whole document */
+@layer base {
+  html, body {
+    /* Deep slate background, like deep ocean water */
+    @apply bg-slate-950 text-slate-200 min-h-screen antialiased;
+    /* Optional: Add a very subtle dark gradient texture */
+    background-image: radial-gradient(circle at top center, rgba(30, 41, 59, 0.5) 0%, rgba(2, 6, 23, 1) 100%);
+  }
+}
