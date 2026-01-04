@@ -5,6 +5,7 @@
  * 1. VPC: Network isolation for the RDS instance.
  * 2. DynamoDB: NoSQL table for high-volume Ship Telemetry.
  * 3. RDS (Postgres): Relational database for Order Management.
+ * 4. Security Group: Configured for Self-Referencing Access (Lambda <-> RDS).
  */
 
 import * as cdk from 'aws-cdk-lib';
@@ -51,7 +52,7 @@ export class DatabaseStack extends cdk.Stack {
          */
         this.vpc = new ec2.Vpc(this, 'NexusMarineVpc', {
             maxAzs: 2, // High availability across 2 Availability Zones
-            natGateways: 1, // Required for Lambda in VPC to reach internet (optional for this specific phase but good practice)
+            natGateways: 1, // Required for Lambda in VPC to reach internet
             subnetConfiguration: [
                 {
                     cidrMask: 24,
@@ -79,6 +80,14 @@ export class DatabaseStack extends cdk.Stack {
             description: 'Allow access to Postgres DB',
             allowAllOutbound: true
         });
+
+        // 🔴 FIX: Allow Self-Referencing Ingress
+        // This allows resources sharing this Security Group (Lambda + RDS) to talk to each other.
+        this.dbSecurityGroup.addIngressRule(
+            this.dbSecurityGroup, 
+            ec2.Port.tcp(5432), 
+            'Allow Postgres access from resources with the same Security Group'
+        );
 
         /**
          * RDS PostgreSQL Instance.
