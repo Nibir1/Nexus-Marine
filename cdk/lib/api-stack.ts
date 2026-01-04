@@ -11,6 +11,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as events from 'aws-cdk-lib/aws-events';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { fileURLToPath } from 'url';
@@ -21,6 +22,7 @@ const __dirname = path.dirname(__filename);
 
 interface ApiStackProps extends cdk.StackProps {
     telemetryTable: dynamodb.Table; // Dependency injection from DatabaseStack
+    eventBus: events.EventBus;      // Dependency injection from EventStack
 }
 
 export class ApiStack extends cdk.Stack {
@@ -43,7 +45,8 @@ export class ApiStack extends cdk.Stack {
             entry: path.join(__dirname, '../../backend/src/telemetry/handler.ts'), 
             handler: 'handler',
             environment: {
-                TELEMETRY_TABLE_NAME: props.telemetryTable.tableName
+                TELEMETRY_TABLE_NAME: props.telemetryTable.tableName,
+                EVENT_BUS_NAME: props.eventBus.eventBusName
             },
             bundling: {
                 minify: true,
@@ -53,6 +56,7 @@ export class ApiStack extends cdk.Stack {
 
         // Grant permission: Lambda can WRITE to DynamoDB
         props.telemetryTable.grantWriteData(telemetryLambda);
+        props.eventBus.grantPutEventsTo(telemetryLambda);
 
         // =================================================================
         // 2. API GATEWAY

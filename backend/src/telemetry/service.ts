@@ -1,31 +1,27 @@
 /**
  * File: backend/src/telemetry/service.ts
  * Description: Business logic for Telemetry ingestion.
- * Responsibilities:
- * 1. Validate incoming data structure.
- * 2. Persist data to DynamoDB.
- * 3. (Phase 3 placeholder) Check for critical thresholds.
+ * Updates: Added EventBridge logic for Critical Alerts.
  */
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge"; // <--- NEW IMPORT
 import { z } from "zod";
-import type { ShipTelemetry } from "../shared/types.js"; // Note the .js extension for ESM/nodenext
+import type { ShipTelemetry } from "../shared/types.js";
 
-// Initialize DynamoDB Client (Outside handler for connection reuse)
+// Initialize Clients
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
+const ebClient = new EventBridgeClient({}); // <--- NEW CLIENT
 
-// Get Table Name from Environment Variable (injected by CDK)
+// Environment Variables
 const TABLE_NAME = process.env.TELEMETRY_TABLE_NAME || '';
+const EVENT_BUS_NAME = process.env.EVENT_BUS_NAME || ''; // <--- NEW ENV VAR
 
-/**
- * Zod Schema for runtime validation of incoming telemetry.
- * This ensures we don't save garbage data to our database.
- */
 const TelemetrySchema = z.object({
     shipId: z.string().min(1),
-    timestamp: z.string().datetime(), // ISO 8601 validation
+    timestamp: z.string().datetime(),
     temperature: z.number(),
     fuelLevel: z.number().min(0).max(100),
     latitude: z.number(),
@@ -33,24 +29,18 @@ const TelemetrySchema = z.object({
     status: z.enum(['NORMAL', 'WARNING', 'CRITICAL'])
 });
 
-/**
- * Service function to process and save telemetry data.
- * @param data - Raw input object (usually from JSON body)
- * @returns The saved ShipTelemetry object
- */
 export async function ingestTelemetry(data: unknown): Promise<ShipTelemetry> {
-    if (!TABLE_NAME) {
-        throw new Error("Server Configuration Error: TELEMETRY_TABLE_NAME is missing.");
+    if (!TABLE_NAME || !EVENT_BUS_NAME) {
+        throw new Error("Server Configuration Error: Missing Env Vars.");
     }
 
-    // 1. Validate Data
     const parseResult = TelemetrySchema.safeParse(data);
     if (!parseResult.success) {
         throw new Error(`Validation Failed: ${parseResult.error.message}`);
     }
     const telemetry = parseResult.data as ShipTelemetry;
 
-    // 2. Persist to DynamoDB
+    // 1. Persist to DynamoDB
     const command = new PutCommand({
         TableName: TABLE_NAME,
         Item: telemetry
@@ -59,12 +49,42 @@ export async function ingestTelemetry(data: unknown): Promise<ShipTelemetry> {
     try {
         await docClient.send(command);
         console.log(`[TelemetryService] Saved telemetry for ship: ${telemetry.shipId}`);
-        
-        // (Phase 3: EventBridge logic will go here)
-
-        return telemetry;
     } catch (error) {
         console.error("[TelemetryService] DynamoDB Write Error", error);
         throw new Error("Failed to persist telemetry data.");
     }
+
+    // =================================================================
+    // 2. CHECK FOR CRITICAL CONDITION (EDA)
+    // =================================================================
+    if (telemetry.temperature > 100) {
+        console.log(`[TelemetryService] ALERT! Temp ${telemetry.temperature} exceeds threshold. Publishing event.`);
+        
+        const eventCommand = new PutEventsCommand({
+            Entries: [
+                {
+                    EventBusName: EVENT_BUS_NAME,
+                    Source: 'nexus.marine.telemetry',
+                    DetailType: 'Marine.CriticalAlert',
+                    Detail: JSON.stringify({
+                        shipId: telemetry.shipId,
+                        temperature: telemetry.temperature,
+                        timestamp: telemetry.timestamp,
+                        alertMessage: "Engine Temperature Critical"
+                    }),
+                }
+            ]
+        });
+
+        try {
+            await ebClient.send(eventCommand);
+            console.log("[TelemetryService] Critical Alert published to EventBridge.");
+        } catch (error) {
+            // Note: In production, we might want to retry or log to a DLQ, 
+            // but we don't fail the HTTP request just because the alert failed.
+            console.error("[TelemetryService] Failed to publish event", error);
+        }
+    }
+
+    return telemetry;
 }
