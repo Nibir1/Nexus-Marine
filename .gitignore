@@ -137,3 +137,30 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# ==============================================================================
+# AWS CDK & Cloud Specific Ignores
+# ==============================================================================
+
+# CDK synthesis output (contains CloudFormation templates)
+cdk.out/
+
+# CDK Context (caches account IDs, VPC IDs, and availability zones)
+# It is often recommended to gitignore this to avoid "snapshot" conflicts 
+# or leaking account details in public repos.
+cdk.context.json
+
+# AWS SAM (Serverless Application Model) build artifacts
+.aws-sam/
+
+# Compiled TypeScript files (Keep source .ts, ignore compiled .js/.d.ts)
+# This prevents clutter if you accidentally run 'tsc' manually
+*.js
+*.d.ts
+!jest.config.js
+!vite.config.js
+!nexus-marine.js 
+# (Add exceptions above if you have specific JS config files you MUST commit)
+
+# Mac OS metadata (often annoying in teams)
+.DS_Store
