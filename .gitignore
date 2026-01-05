@@ -157,6 +157,7 @@ cdk.context.json
 *.d.ts
 *.map
 !jest.config.js
+!jest.setup.js
 !vite.config.js
 !nexus-marine.js 
 
