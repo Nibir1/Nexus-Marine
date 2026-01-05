@@ -16,7 +16,7 @@
 ![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
 ![Tests](https://img.shields.io/badge/Tests-100%25_Passing-green?style=for-the-badge)
 
-**Nexus-Marine** is a full-stack, enterprise-grade cloud platform designed for Wärtsilä's B2B ecosystem. It bridges the gap between high-frequency vessel telemetry and secure supply chain operations, utilizing a Serverless First architecture for infinite scalability and zero-maintenance overhead.
+**Nexus-Marine** is a full-stack, enterprise-grade cloud platform designed for industrial B2B ecosystem. It bridges the gap between high-frequency vessel telemetry and secure supply chain operations, utilizing a Serverless First architecture for infinite scalability and zero-maintenance overhead.
 
 ---
 
