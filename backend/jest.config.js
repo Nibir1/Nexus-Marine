@@ -2,20 +2,25 @@
 export default {
   preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
-  // Add this line to load the setup file
   setupFiles: ['<rootDir>/jest.setup.js'], 
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^(\\.{1,2}/.*)\\.js$': '$1', 
   },
   transform: {
-    '^.+\\.[tj]sx?$': [
+    '^.+\\.tsx?$': [
       'ts-jest',
       {
         useESM: true,
       },
     ],
   },
+  // Ignore build folders just in case
+  testPathIgnorePatterns: [
+    "/node_modules/",
+    "/dist/",
+    "/cdk.out/"
+  ],
   transformIgnorePatterns: [
     'node_modules/(?!(aws-sdk-client-mock-jest|@aws-sdk)/)'
   ],
