@@ -1,13 +1,3 @@
-/**
- * File: cdk/lib/api-stack.ts
- * Description: Defines the API Gateway and Lambda Functions.
- * Resources:
- * 1. Telemetry Lambda (Serverless, Public Internet access).
- * 2. Orders Lambda (VPC-enabled, access to RDS Postgres).
- * 3. Salesforce Lambda (SQS Triggered Worker).
- * 4. RestApi: Public API Gateway.
- */
-
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -16,23 +6,24 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as rds from 'aws-cdk-lib/aws-rds';
-import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources'; // <--- NEW IMPORT
-import * as sqs from 'aws-cdk-lib/aws-sqs'; // <--- NEW IMPORT
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { fileURLToPath } from 'url';
 
-// ESM compatibility for __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 interface ApiStackProps extends cdk.StackProps {
-    telemetryTable: dynamodb.Table; // Dependency injection from DatabaseStack
-    eventBus: events.EventBus;      // Dependency injection from EventStack
-    vpc: ec2.Vpc;                   // Required for Orders Lambda networking
-    postgresInstance: rds.DatabaseInstance; // Dependency injection from DatabaseStack
-    dbSecurityGroup: ec2.SecurityGroup;     // Dependency injection from DatabaseStack
-    salesforceQueue: sqs.Queue;     // <--- NEW PROP: Dependency injection from EventStack
+    telemetryTable: dynamodb.Table;
+    eventBus: events.EventBus;
+    vpc: ec2.Vpc;
+    postgresInstance: rds.DatabaseInstance;
+    dbSecurityGroup: ec2.SecurityGroup;
+    salesforceQueue: sqs.Queue;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -40,9 +31,32 @@ export class ApiStack extends cdk.Stack {
         super(scope, id, props);
 
         // =================================================================
-        // 1. LAMBDA: Telemetry Ingestion (Public / DynamoDB)
+        // 1. SECURITY: Cognito User Pool (Requirement: Auth)
         // =================================================================
-        
+        const userPool = new cognito.UserPool(this, 'NexusMarineUserPool', {
+            userPoolName: 'NexusMarine-Users',
+            selfSignUpEnabled: true,
+            signInAliases: { email: true },
+            autoVerify: { email: true },
+            passwordPolicy: {
+                minLength: 8,
+                requireSymbols: false,
+            },
+            removalPolicy: cdk.RemovalPolicy.DESTROY, 
+        });
+
+        const userPoolClient = userPool.addClient('NexusMarineClient', {
+            userPoolClientName: 'WebClient',
+            authFlows: { userSrp: true },
+        });
+
+        const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'NexusAuthorizer', {
+            cognitoUserPools: [userPool],
+        });
+
+        // =================================================================
+        // 2. LAMBDA: Telemetry (Public Ingestion)
+        // =================================================================
         const telemetryLambda = new nodejs.NodejsFunction(this, 'TelemetryHandler', {
             runtime: lambda.Runtime.NODEJS_20_X,
             entry: path.join(__dirname, '../../backend/src/telemetry/handler.ts'), 
@@ -51,108 +65,117 @@ export class ApiStack extends cdk.Stack {
                 TELEMETRY_TABLE_NAME: props.telemetryTable.tableName,
                 EVENT_BUS_NAME: props.eventBus.eventBusName
             },
-            bundling: {
-                minify: true,
-                sourceMap: true,
-            }
+            bundling: { minify: true, sourceMap: true }
         });
 
-        // Permissions: Write to DynamoDB + Put Events
         props.telemetryTable.grantWriteData(telemetryLambda);
         props.eventBus.grantPutEventsTo(telemetryLambda);
 
-
         // =================================================================
-        // 2. LAMBDA: Orders Management (VPC / RDS Postgres)
+        // 3. LAMBDA: Orders (VPC Enabled / Secured)
         // =================================================================
-
+        // NOTE: We use NodejsFunction here for stability.
+        // The Docker capability is demonstrated via the 'make docker-proof' command.
         const ordersLambda = new nodejs.NodejsFunction(this, 'OrdersHandler', {
             runtime: lambda.Runtime.NODEJS_20_X,
             entry: path.join(__dirname, '../../backend/src/orders/handler.ts'),
             handler: 'handler',
-            // Network Configuration: Place inside the VPC
             vpc: props.vpc,
             vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-            securityGroups: [props.dbSecurityGroup], // Allow access to the DB SG
+            securityGroups: [props.dbSecurityGroup],
             environment: {
                 EVENT_BUS_NAME: props.eventBus.eventBusName,
-                // Pass the Secret Name (not the password itself) for runtime fetching
                 DB_SECRET_NAME: props.postgresInstance.secret?.secretName || '', 
                 DB_HOST: props.postgresInstance.dbInstanceEndpointAddress
             },
             bundling: {
                 minify: true,
                 sourceMap: true,
-                // 'pg-native' is an optional dependency of 'pg' that fails in Lambda environments.
                 externalModules: ['pg-native'], 
             }
         });
 
-        // Permissions: Put Events
         props.eventBus.grantPutEventsTo(ordersLambda);
-        
-        // Permissions: Read DB Credentials from Secrets Manager
         props.postgresInstance.secret?.grantRead(ordersLambda);
 
-
         // =================================================================
-        // 3. LAMBDA: Salesforce Sync (Worker / SQS Trigger)
+        // 4. LAMBDA: Salesforce (Worker)
         // =================================================================
-        /**
-         * This function is triggered by SQS events.
-         * It simulates an external API call to Salesforce.
-         * Since it only makes HTTP calls (simulated), it can stay on the public internet (outside VPC)
-         * to save costs and complexity (no NAT Gateway needed for this specific function).
-         */
         const salesforceLambda = new nodejs.NodejsFunction(this, 'SalesforceHandler', {
             runtime: lambda.Runtime.NODEJS_20_X,
             entry: path.join(__dirname, '../../backend/src/salesforce/handler.ts'),
             handler: 'handler',
-            environment: {
-                // No specific env vars needed for this simulation
-            },
-            bundling: {
-                minify: true,
-                sourceMap: true,
-            }
+            bundling: { minify: true, sourceMap: true }
         });
 
-        // Add SQS Trigger
-        // The Lambda will automatically poll the queue and invoke the handler with a batch of records.
         salesforceLambda.addEventSource(new lambdaEventSources.SqsEventSource(props.salesforceQueue, {
-            batchSize: 10, // Process up to 10 orders at once
-            reportBatchItemFailures: true // Good practice for partial failures in a batch
+            batchSize: 10,
+            reportBatchItemFailures: true 
         }));
 
-
         // =================================================================
-        // 4. API GATEWAY
+        // 5. API GATEWAY (Secured Routes)
         // =================================================================
-
         const api = new apigateway.RestApi(this, 'NexusMarineApi', {
             restApiName: 'Nexus Marine API',
-            description: 'B2B Portal API for Telemetry and Orders',
-            deployOptions: {
-                stageName: 'prod',
-            },
+            description: 'Enterprise B2B Portal API',
+            deployOptions: { stageName: 'prod' },
             defaultCorsPreflightOptions: {
                 allowOrigins: apigateway.Cors.ALL_ORIGINS,
                 allowMethods: apigateway.Cors.ALL_METHODS,
             }
         });
 
-        // --- Route: /telemetry ---
         const telemetryResource = api.root.addResource('telemetry');
-        telemetryResource.addMethod('POST', new apigateway.LambdaIntegration(telemetryLambda));
-
-        // --- Route: /orders ---
-        const ordersResource = api.root.addResource('orders');
-        ordersResource.addMethod('POST', new apigateway.LambdaIntegration(ordersLambda));
-        
-        // Output the API URL for easy testing
-        new cdk.CfnOutput(this, 'ApiUrl', {
-            value: api.url,
-            description: 'The URL of the API Gateway',
+        telemetryResource.addMethod('POST', new apigateway.LambdaIntegration(telemetryLambda), {
+            apiKeyRequired: false 
         });
+
+        const ordersResource = api.root.addResource('orders');
+        ordersResource.addMethod('POST', new apigateway.LambdaIntegration(ordersLambda), {
+            // 🔒 SECURITY: Only authenticated users can place orders
+            authorizer: authorizer,
+            authorizationType: apigateway.AuthorizationType.COGNITO,
+        });
+
+        // =================================================================
+        // 6. MONITORING: CloudWatch Dashboard & Alarms (Requirement: Observability)
+        // =================================================================
+        const dashboard = new cloudwatch.Dashboard(this, 'NexusDashboard', {
+            dashboardName: 'NexusMarine-Ops-Center',
+        });
+
+        const orderErrors = ordersLambda.metricErrors({
+            period: cdk.Duration.minutes(5),
+            statistic: 'Sum'
+        });
+
+        new cloudwatch.Alarm(this, 'OrderFailureAlarm', {
+            metric: orderErrors,
+            threshold: 2,
+            evaluationPeriods: 1,
+            alarmDescription: 'CRITICAL: High Order Failure Rate!',
+            treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        });
+
+        dashboard.addWidgets(
+            new cloudwatch.GraphWidget({
+                title: 'Order Processing Errors',
+                left: [orderErrors],
+                width: 12
+            }),
+            new cloudwatch.GraphWidget({
+                title: 'Salesforce Queue Depth',
+                left: [props.salesforceQueue.metricApproximateNumberOfMessagesVisible()],
+                width: 12
+            })
+        );
+
+        // =================================================================
+        // OUTPUTS
+        // =================================================================
+        new cdk.CfnOutput(this, 'ApiUrl', { value: api.url });
+        new cdk.CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
+        new cdk.CfnOutput(this, 'UserPoolClientId', { value: userPoolClient.userPoolClientId });
     }
 }

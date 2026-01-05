@@ -1,0 +1,31 @@
+name: Nexus Marine CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: make install
+
+      - name: Run Tests (Unit + Infra)
+        run: make test
+
+      # Note: We skip actual Deployment in this demo to avoid needing
+      # AWS Credentials stored in your GitHub Secrets right now.
+      # To enable, you would add `aws-actions/configure-aws-credentials` here.
+      - name: Build Project
+        run: make build

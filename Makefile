@@ -8,7 +8,7 @@ BACKEND_DIR = backend
 CDK_DIR = cdk
 FRONTEND_DIR = frontend
 
-.PHONY: help install build deploy clean test
+.PHONY: help install build deploy clean test destroy docker-proof
 
 # Default target: Help
 help:
@@ -74,3 +74,11 @@ clean:
 	rm -rf $(FRONTEND_DIR)/node_modules $(FRONTEND_DIR)/dist
 	rm -rf $(CDK_DIR)/node_modules $(CDK_DIR)/cdk.out $(CDK_DIR)/dist
 	@echo "Clean."
+
+# ------------------------------------------------------------------------------
+# 5. ENTERPRISE CHECKS
+# ------------------------------------------------------------------------------
+docker-proof:
+	@echo "Verifying Docker Build Capability..."
+	cd backend && docker build -f src/orders/Dockerfile -t nexus-orders-service .
+	@echo "Docker Build Successful! (Ready for ECS/EKS Migration)"
