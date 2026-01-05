@@ -8,7 +8,7 @@ BACKEND_DIR = backend
 CDK_DIR = cdk
 FRONTEND_DIR = frontend
 
-.PHONY: help install build deploy clean test destroy docker-proof
+.PHONY: help install build deploy clean test destroy docker-proof docker-cleanup
 
 # Default target: Help
 help:
@@ -82,3 +82,8 @@ docker-proof:
 	@echo "Verifying Docker Build Capability..."
 	cd backend && docker build -f src/orders/Dockerfile -t nexus-orders-service .
 	@echo "Docker Build Successful! (Ready for ECS/EKS Migration)"
+
+docker-cleanup:
+	@echo "Cleaning up Docker images..."
+	docker system prune -f
+	@echo "Docker Cleanup Complete."

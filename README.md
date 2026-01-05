@@ -2,9 +2,9 @@
 
 > **Next-Gen B2B Marine Portal: Connecting Serverless Order Management with Event-Driven Orchestration.**
 
-[![Nexus Marine Architecture](https://img.youtube.com/vi/PLACEHOLDER_VIDEO_ID/maxresdefault.jpg)](https://youtu.be/PLACEHOLDER_VIDEO_ID)
+[![Nexus Marine Architecture](https://img.youtube.com/vi/h1aCyKghfhE/maxresdefault.jpg)](https://youtu.be/h1aCyKghfhE)
 
-> **[Watch the Architectural Demo](https://youtu.be/PLACEHOLDER_VIDEO_ID)** featuring EventBridge Decoupling, Hybrid Compute (Lambda + Docker), and Cognito Security.
+> **[Watch the Architectural Demo](https://youtu.be/h1aCyKghfhE)** featuring EventBridge Decoupling, Hybrid Compute (Lambda + Docker), and Cognito Security.
 
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success?style=for-the-badge)
 ![Architecture](https://img.shields.io/badge/Architecture-Event--Driven-blueviolet?style=for-the-badge)
