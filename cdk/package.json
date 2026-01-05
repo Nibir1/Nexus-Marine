@@ -8,11 +8,13 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "test": "jest",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "cdk": "cdk"
   },
   "devDependencies": {
-    "@types/jest": "^29.5.12",
+    "@aws-cdk/assertions": "^1.203.0",
+    "@types/jest": "^29.5.14",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.19.27",
     "@types/source-map-support": "^0.5.10",
     "aws-cdk": "2.133.0",

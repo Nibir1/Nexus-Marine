@@ -62,9 +62,11 @@ destroy:
 	cd $(CDK_DIR) && npx cdk destroy --all --force
 
 test:
-	@echo "Running Tests..."
+	@echo "Running Backend Unit Tests..."
 	cd $(BACKEND_DIR) && npm test
+	@echo "Running CDK Infrastructure Tests..."
 	cd $(CDK_DIR) && npm test
+	@echo "All Tests Passed."
 
 clean:
 	@echo "Cleaning up..."
